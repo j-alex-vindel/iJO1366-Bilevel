@@ -1,0 +1,203 @@
+# ----Libraries to import --------------------------------
+import pandas as pd
+import gurobipy as gp
+from gurobipy import GRB
+import numpy as np
+import csv
+# ----read data from files-------------------------------
+UB = pd.read_csv('iJO1366_UB.csv',header=None)[0].tolist()
+
+LB = pd.read_csv('iJO1366_LB.csv',header=None)[0].tolist()
+ 
+rxn = pd.read_csv('iJO1366_rxn.csv',header=None)[0].tolist()
+
+met = pd.read_csv('iJO1366_met.csv',header=None)[0].tolist()
+
+b = pd.read_csv('iJO1366_b.csv',header=None)[0].tolist()
+
+c = pd.read_csv('iJO1366_c.csv',header=None)[0].tolist()
+
+S = pd.read_csv('iJO1366_S.csv',header=None).values
+
+r = pd.read_csv('iJO1366_r.csv',header=None)[0].tolist() # if reaction i is reversible r[i] = 1
+
+names = pd.read_csv('iJO1366_names.csv',header=None)[0].tolist()
+
+# ----Changing the biological assumptions------------------
+
+# prespecified amount of glucose uptake 10 mmol/grDW*hr 'EX_glc__D_e' = -10 reaction 
+
+LB[rxn.index('EX_glc__D_e')] = -10
+UB[rxn.index('EX_glc__D_e')] = -10
+
+# Unconstrained uptake routes for inorganic phosphate, sulfate and ammonia 
+# 'EX_o2_e';'EX_pi_e';'EX_so4_e'; 'EX_nh4_e' index = 184 ; 199 ; 259 ; 169
+
+LB[rxn.index('EX_o2_e')] = 0
+LB[rxn.index('EX_pi_e')] = -1000
+LB[rxn.index('EX_so4_e')] = -1000
+LB[rxn.index('EX_nh4_e')] = -1000
+
+#Enable secretion routes for acetate, carbon dioxide, ethanol, formate, lactate and succinate
+# {'EX_ac_e';'EX_co2_e';'EX_etoh_e';'EX_for_e';'EX_lac__D_e';'EX_succ_e'} change in the upper bound 
+# index = 87; 2; 340; 422; 91; 261
+
+sec_routes = ['EX_ac_e','EX_co2_e','EX_etoh_e','EX_for_e','EX_lac__D_e','EX_succ_e']
+
+for i in sec_routes:
+    UB[(rxn.index(i))] = 1000
+    
+# Constrain the phosphotransferase system - 'b' means a change in both bounds to fix a flux
+# 'GLCabcpp', -1000, 'l' - 'GLCptspp', -1000, 'l' - 'GLCabcpp', 1000, 'u' - 'GLCptspp', 1000, 'u' - 'GLCt2pp', 0, 'b'
+# index 1287, 1291, 1287, 1291, 1293
+
+LB[rxn.index('GLCabcpp')] = -1000
+LB[rxn.index('GLCptspp')] = -1000
+UB[rxn.index('GLCabcpp')] = 1000
+UB[rxn.index('GLCptspp')] = 1000
+LB[rxn.index('GLCt2pp')] = 0 
+UB[rxn.index('GLCt2pp')] = 0
+
+# ----List of set of reactions for Knockouts ie. only reactions in this set will be deleted-------------------------
+
+set_reaction = ['GLCabcpp', 'GLCptspp', 'HEX1', 'PGI', 'PFK', 'FBA', 'TPI', 'GAPD','PGK', 'PGM', 'ENO', 'PYK', 
+'LDH_D', 'PFL', 'ALCD2x', 'PTAr', 'ACKr','G6PDH2r', 'PGL', 'GND', 'RPI', 'RPE', 'TKT1', 'TALA', 'TKT2', 'FUM',
+'FRD2', 'SUCOAS', 'AKGDH', 'ACONTa', 'ACONTb', 'ICDHyr', 'CS', 'MDH','MDH2', 'MDH3', 'ACALD']
+
+knockout = []
+
+for i in set_reaction:
+    knockout.append(rxn.index(i))
+
+# succinate production and growth rate
+
+rxn_target = ['EX_succ_e','EX_etoh_e','EX_for_e','EX_lac__D_e','EX_ac_e']
+in_target = []
+
+for i in rxn_target:
+    in_target.append(rxn.index(i))
+    
+# ----Defining the indeces for the biomass abd chemical 'BIOMASS_Ec_iJO1366_core_53p95M'--------------
+
+bm_core = rxn.index('BIOMASS_Ec_iJO1366_core_53p95M')
+
+chemical = rxn.index('EX_succ_e')
+
+# ----FBA Model - production of metabolites before running OptKnock----------------------------------------------
+
+f = gp.Model()
+
+reactions = [i for i in range(len(rxn))]
+
+metabolites = [i for i in range(len(met))]
+
+
+vf = f.addVars(range(len(rxn)),lb=-GRB.INFINITY,ub=GRB.INFINITY,obj=c,vtype=GRB.CONTINUOUS, name='vf')
+
+f.modelSense = GRB.MAXIMIZE
+
+f.addConstrs((gp.quicksum(S[i,j] * vf[j] for j in reactions) == b[i] for i in metabolites), name='FBA')
+
+
+f.addConstrs((LB[j] <= vf[j] for j in reactions), name='f_LB')
+
+f.addConstrs((vf[j] <= UB[j] for j in reactions), name='f_UB')
+
+
+f.optimize()
+
+if f.status == GRB.OPTIMAL:
+    obj = f.getObjective()
+    FBA_WT = obj.getValue()
+    fvar= f.getAttr('X',f.getVars())
+    succ_WT = fvar[in_target[0]]
+    etha_WT = fvar[in_target[1]]
+    form_WT = fvar[in_target[2]]
+    lact_WT = fvar[in_target[3]]
+    acet_WT = fvar[in_target[4]]
+
+# ----Bilevel Model ----------------------------------------------------------------------------------
+k = 2
+
+
+def inner(yoj):
+    global vis
+    i = gp.Model()
+
+    vi = i.addVars(range(len(rxn)),lb=-GRB.INFINITY, ub=GRB.INFINITY, vtype=GRB.CONTINUOUS, name='vi')
+    
+    i.setObjective(2000*vi[bm_core], GRB.MAXIMIZE) 
+
+    i.addConstrs((gp.quicksum(S[i,j] * vi[j] for j in reactions) == 0 for i in metabolites), name='IFFBA')
+
+    i.addConstrs((LB[j]*yoj[j] <= vi[j] for j in reactions), name='iLB')
+    i.addConstrs((vi[j] <= UB[j]*yoj[j] for j in reactions), name='iUB')
+    
+    i.optimize()
+
+    if i.status == GRB.OPTIMAL:
+        soi = i.getAttr('X',i.getVars())
+        vis = soi.copy()
+    return vis
+
+def cut(model,where):
+    if (where == GRB.Callback.MIPSOL):
+        voj = model.cbGetSolution(model._vars) # v values from the outerproblem
+        yoj = model.cbGetSolution(model._varsy)# y values from the outerproblem
+        keys = model._vars.keys()  #keys
+        vjs = model._vars   #variables master's vj
+        yjs = model._varsy  #variables master's yj
+        
+        eps = .00001
+        vij = inner(yoj) # v values from the inner problem
+        
+        
+        if abs(vij[bm_core]-voj[bm_core]) >= eps:
+            model.cbLazy(vij[bm_core] <= vjs[bm_core] + 2000*(gp.quicksum((1-yjs[j])*abs(vij[j]) for j in keys)))
+            print('**** C U T ****')
+        else:
+            print('Outer Growth Rate','-->',voj[bm_core])
+            print('Inner Growth Rate','-->',vij[bm_core])
+            
+
+m = gp.Model()
+
+v = m.addVars(range(len(rxn)), lb=-GRB.INFINITY, ub=GRB.INFINITY, vtype=GRB.CONTINUOUS, name= 'v')
+y = m.addVars(range(len(rxn)), vtype=GRB.BINARY, name= 'y')
+
+m.setObjective(1*v[chemical], GRB.MAXIMIZE)
+
+m.addConstrs((gp.quicksum(S[i,j] * v[j] for j in reactions) == 0 for i in metabolites), name='OFFBA')
+
+# Bounds and y's
+
+m.addConstrs((y[j] == 1 for j in reactions if j not in knockout), name='Essentials')
+
+# j is in the knockout set
+
+m.addConstrs((LB[j]*y[j] <= v[j] for j in reactions if j in knockout), name='LBy')
+m.addConstrs((v[j] <= UB[j]*y[j] for j in reactions if j in knockout), name='UBy')
+
+# j is not in the knockout set ie rxn Essentials
+
+m.addConstrs((LB[j] <= v[j] for j in reactions if j not in knockout), name='LB')
+m.addConstrs((v[j] <= UB[j] for j in reactions if j not in knockout), name='UB')
+        
+
+
+m.addConstr(sum(1-y[j] for j in knockout) == k, name='Knapsack') 
+
+
+m.addConstr(v[bm_core] >= .5*FBA_WT, name='expected_growth') # the value for FBA_WT comes from the first FBA
+
+m._vars = v
+m._varsy = y
+m.Params.lazyConstraints = 1
+
+m.optimize(cut)
+
+if m.status == GRB.OPTIMAL:
+    sol = m.getAttr('X',m.getVars())
+    sol1= sol.copy()
+    yoj = sol1[len(rxn):]
+    voj = sol1[:len(rxn)]
