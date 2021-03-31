@@ -2,7 +2,6 @@
 import pandas as pd
 import gurobipy as gp
 from gurobipy import GRB
-import numpy as np
 import csv
 # ----read data from files-------------------------------
 UB = pd.read_csv('iJO1366_UB.csv',header=None)[0].tolist()
@@ -92,7 +91,7 @@ FBA_WT = fba[bm_core]
 # ----Bilevel Model ----------------------------------------------------------------------------------
 k = 2
 
-
+# ----Inner Model -----------------------------------------------------------------------------------
 def inner(yoj):
     global vis
     i = gp.Model()
@@ -115,8 +114,9 @@ def inner(yoj):
         vis = yoj
         vis[bm_core] = 2000
     return vis
-
-def cut(model,where):
+    
+# ----Lazy Constraint -------------------------------------------------------------------------------------
+def lazyctr(model,where):
     if (where == GRB.Callback.MIPSOL):
         voj = model.cbGetSolution(model._vars) # v values from the outerproblem
         yoj = model.cbGetSolution(model._varsy)# y values from the outerproblem
@@ -142,7 +142,7 @@ def cut(model,where):
             print('Outer Growth Rate','-->',voj[bm_core])
             print('Inner Growth Rate','-->',vij[bm_core])
             
-
+# ----Outer Model ---------------------------------------------------------------------------------------------
 m = gp.Model()
 
 v = m.addVars(range(len(rxn)), lb=-GRB.INFINITY, ub=GRB.INFINITY, vtype=GRB.CONTINUOUS, name= 'v')
@@ -177,7 +177,7 @@ m._vars = v
 m._varsy = y
 m.Params.lazyConstraints = 1
 
-m.optimize(cut)
+m.optimize(lazyctr)
 
 if m.status == GRB.OPTIMAL:
     sol = m.getAttr('X',m.getVars())
