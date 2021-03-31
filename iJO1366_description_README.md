@@ -21,8 +21,9 @@ Code inputs:
 * Manipulate the Lower and Upper bounds according to metabolic assumptions.
    * This is done by accesing the indeces of the upper and lower bounds according to the reaction abreviation, example to set the glucose intake equal to 10:
    
-      LB[rxn.index('EX_glc__D_e')] = -10
+      LB[rxn.index('EX_glc__D_e')] = -10;
       UB[rxn.index('EX_glc__D_e')] = -10
+      
    * Note that the name in parentheses is the abrreviation, list.index('name') returns the index of that element in the list, since UB,LB and rxn are the same lenght the UB,LB value for that index corresponds to the reaction upper and lower bound, so it can be manipulated.
    
 * Define the inner model function, this takes the y values from the outer model and calculates the biomass inner value
@@ -31,4 +32,4 @@ Code inputs:
 
 * Define the outer model and provides an initial solution for the inner model and the callback
 
-Each section in the code is identified by # followed by its name
+Each section in the code is identified by '#' followed by its name
