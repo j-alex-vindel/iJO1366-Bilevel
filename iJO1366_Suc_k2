@@ -12,13 +12,7 @@ rxn = pd.read_csv('iJO1366_rxn.csv',header=None)[0].tolist()
 
 met = pd.read_csv('iJO1366_met.csv',header=None)[0].tolist()
 
-b = pd.read_csv('iJO1366_b.csv',header=None)[0].tolist()
-
-c = pd.read_csv('iJO1366_c.csv',header=None)[0].tolist()
-
 S = pd.read_csv('iJO1366_S.csv',header=None).values
-
-r = pd.read_csv('iJO1366_r.csv',header=None)[0].tolist() # if reaction i is reversible r[i] = 1
 
 names = pd.read_csv('iJO1366_names.csv',header=None)[0].tolist()
 
