@@ -23,6 +23,8 @@ r = pd.read_csv('iJO1366_r.csv',header=None)[0].tolist() # if reaction i is reve
 
 names = pd.read_csv('iJO1366_names.csv',header=None)[0].tolist()
 
+fba = pd.read_csv('iJO1366_FBA.csv',header=None)[0].tolist()
+
 # ----Changing the biological assumptions------------------
 
 # prespecified amount of glucose uptake 10 mmol/grDW*hr 'EX_glc__D_e' = -10 reaction 
@@ -83,38 +85,9 @@ bm_core = rxn.index('BIOMASS_Ec_iJO1366_core_53p95M')
 
 chemical = rxn.index('EX_succ_e')
 
-# ----FBA Model - production of metabolites before running OptKnock----------------------------------------------
+# ----FBA Biomass value - production of metabolites before running OptKnock----------------------------------------------
 
-f = gp.Model()
-
-reactions = [i for i in range(len(rxn))]
-
-metabolites = [i for i in range(len(met))]
-
-
-vf = f.addVars(range(len(rxn)),lb=-GRB.INFINITY,ub=GRB.INFINITY,obj=c,vtype=GRB.CONTINUOUS, name='vf')
-
-f.modelSense = GRB.MAXIMIZE
-
-f.addConstrs((gp.quicksum(S[i,j] * vf[j] for j in reactions) == b[i] for i in metabolites), name='FBA')
-
-
-f.addConstrs((LB[j] <= vf[j] for j in reactions), name='f_LB')
-
-f.addConstrs((vf[j] <= UB[j] for j in reactions), name='f_UB')
-
-
-f.optimize()
-
-if f.status == GRB.OPTIMAL:
-    obj = f.getObjective()
-    FBA_WT = obj.getValue()
-    fvar= f.getAttr('X',f.getVars())
-    succ_WT = fvar[in_target[0]]
-    etha_WT = fvar[in_target[1]]
-    form_WT = fvar[in_target[2]]
-    lact_WT = fvar[in_target[3]]
-    acet_WT = fvar[in_target[4]]
+FBA_WT = fba[bm_core]
 
 # ----Bilevel Model ----------------------------------------------------------------------------------
 k = 2
@@ -138,6 +111,9 @@ def inner(yoj):
     if i.status == GRB.OPTIMAL:
         soi = i.getAttr('X',i.getVars())
         vis = soi.copy()
+    if i.status in (GRB.INF_OR_UNBD, GRB.INFEASIBLE, GRB.UNBOUNDED):
+        vis = yoj
+        vis[bm_core] = 2000
     return vis
 
 def cut(model,where):
@@ -153,8 +129,15 @@ def cut(model,where):
         
         
         if abs(vij[bm_core]-voj[bm_core]) >= eps:
+            print('***CUT***')
             model.cbLazy(vij[bm_core] <= vjs[bm_core] + 2000*(gp.quicksum((1-yjs[j])*abs(vij[j]) for j in keys)))
-            print('**** C U T ****')
+            print('***CHECK***')
+            print(str(where == GRB.Callback.MIPNODE))
+            if where == GRB.Callback.MIPNODE:
+               print('*** Check 2 ***')
+               model.cbSetSolution(vjs, vij)
+               model.cbSetSolution(yjs, yoj)
+               
         else:
             print('Outer Growth Rate','-->',voj[bm_core])
             print('Inner Growth Rate','-->',vij[bm_core])
