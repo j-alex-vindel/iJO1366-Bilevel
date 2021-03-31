@@ -16,14 +16,18 @@ Code inputs:
 
 # Code description
 
-Read the csv files (provided) to read the data the code will need, pass each item as a list or a matrix, the case of 'S' (Stoichimetric Matrix) for the easy manipulation.
+* Read the csv files (provided) to read the data the code will need, pass each item as a list or a matrix, the case of 'S' (Stoichimetric Matrix) for the easy manipulation.
 
-Manipulate the Lower and Upper bounds according to metabolic assumptions.
+* Manipulate the Lower and Upper bounds according to metabolic assumptions.
+   * This is done by accesing the indeces of the upper and lower bounds according to the reaction abbreviation, example to set the glucose intake equal to 10:
+    LB[rxn.index('EX_glc__D_e')] = -10
+    UB[rxn.index('EX_glc__D_e')] = -10
+   * Note that the name in parentheses is the abrreviation, list.index('name') returns the index of that element in the list, since UB,LB and rxn are the same lenght the UB,LB value for that index corresponds to the reaction upper and lower bound, so it can be manipulated.
+   
+* Define the inner model function, this takes the y values from the outer model and calculates the biomass inner value
 
-Define the inner model function, this takes the y values from the outer model and calculates the biomass inner value
+* Define the lazy constraint function, takes the outer variables and values and starts the gurobi callbacks
 
-Define the lazy constraint function, takes the outer variables and values and starts the gurobi callbacks
-
-Define the outer model and provides an initial solution for the inner model and the callback
+* Define the outer model and provides an initial solution for the inner model and the callback
 
 Each section in the code is identified by # folloed by its name
