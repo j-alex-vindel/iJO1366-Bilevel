@@ -138,7 +138,7 @@ def lazyctr(model,where): # cut according to the first formulation
             print('Outer biomas:',model._voj[bm_core])
 
             model.cbLazy(model._vij[bm_core] <= model._vars[bm_core] +
-            model._vij[bm_core]*(gp.quicksum((1-model._varsy[j]) for j in keys if abs(model._vij) != 0))
+            model._vij[bm_core]*(gp.quicksum((1-model._varsy[j]) for j in keys if abs(model._vij) != 0)))
             
             print('*** End Lazy Constraint***')
     elif where == GRB.Callback.MIPNODE: # try to indent it at the same level as the first "if"
